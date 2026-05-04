@@ -17,6 +17,10 @@ USER_AGENT = "rss2twitter-bot/1.0"
 
 
 def load_published_ids() -> set:
+    """从磁盘读取已发布 RSS 条目的 ID。
+
+    读取 JSON 状态文件并返回已发布 ID 的集合。若文件不存在或无效，返回空集合。
+    """
     if not STATE_FILE.exists():
         return set()
 
@@ -29,6 +33,10 @@ def load_published_ids() -> set:
 
 
 def save_published_ids(published_ids: set) -> None:
+    """将已发布 RSS 条目的 ID 保存到磁盘。
+
+    将当前已发布 ID 的集合写入 JSON 状态文件，以便后续运行可以保持状态。
+    """
     STATE_FILE.write_text(
         json.dumps({"published": sorted(published_ids)}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -36,6 +44,10 @@ def save_published_ids(published_ids: set) -> None:
 
 
 def get_env(name: str, required: bool = True) -> str:
+    """读取必需的环境变量。
+
+    如果变量为必需但缺失，则抛出 RuntimeError。
+    """
     value = os.getenv(name, "")
     if required and not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
@@ -43,6 +55,10 @@ def get_env(name: str, required: bool = True) -> str:
 
 
 def parse_feed_urls() -> list[str]:
+    """从 RSS_FEED_URLS 环境变量解析 RSS 源地址。
+
+    支持逗号、分号或换行分隔的多个 RSS URL。
+    """
     raw = get_env("RSS_FEED_URLS")
     urls = []
     for line in re.split(r"[,;\n]+", raw):
@@ -53,6 +69,7 @@ def parse_feed_urls() -> list[str]:
 
 
 def build_twitter_api() -> tweepy.API:
+    """使用环境变量凭据创建并返回 Tweepy API 客户端。"""
     api_key = get_env("TWITTER_API_KEY")
     api_secret = get_env("TWITTER_API_SECRET_KEY")
     access_token = get_env("TWITTER_ACCESS_TOKEN")
@@ -63,6 +80,7 @@ def build_twitter_api() -> tweepy.API:
 
 
 def entry_unique_id(entry: dict) -> str:
+    """为 RSS 条目生成稳定的唯一标识符。"""
     raw_id = entry.get("id") or entry.get("guid") or entry.get("link") or entry.get("title")
     if raw_id:
         return str(raw_id)
@@ -73,6 +91,10 @@ def entry_unique_id(entry: dict) -> str:
 
 
 def extract_image_urls(entry: dict) -> list[str]:
+    """从 RSS 条目中提取图片 URL。
+
+    支持 enclosure 中的图片地址，以及条目内容或摘要中的 <img> 标签。
+    """
     urls = []
 
     for enclosure in entry.get("enclosures", []):
@@ -92,6 +114,10 @@ def extract_image_urls(entry: dict) -> list[str]:
 
 
 def download_image(url: str) -> Path | None:
+    """从 URL 下载图片到临时文件。
+
+    成功时返回本地路径，下载失败时返回 None。
+    """
     try:
         response = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}, stream=True)
         response.raise_for_status()
@@ -114,6 +140,10 @@ def download_image(url: str) -> Path | None:
 
 
 def build_tweet_text(entry: dict) -> str:
+    """构建 RSS 条目的推文文本。
+
+    使用条目标题和链接，并在超过 Twitter 280 字符限制时进行截断。
+    """
     title = entry.get("title", "")
     link = entry.get("link", "")
     tweet = f"{title}\n{link}" if title and link else title or link
@@ -124,6 +154,10 @@ def build_tweet_text(entry: dict) -> str:
 
 
 def publish_entry(api: tweepy.API, entry: dict) -> bool:
+    """将单个 RSS 条目发布到 Twitter。
+
+    下载最多 MAX_MEDIA 张图片，上传到 Twitter，并发布推文文本。发布成功返回 True。
+    """
     media_ids = []
     image_urls = extract_image_urls(entry)
     for image_url in image_urls[:MAX_MEDIA]:
@@ -150,6 +184,7 @@ def publish_entry(api: tweepy.API, entry: dict) -> bool:
 
 
 def sort_entries(entries: list[dict]) -> list[dict]:
+    """排序 RSS 条目，尽可能将较早的内容先发布。"""
     def key(entry: dict):
         published = entry.get("published_parsed") or entry.get("updated_parsed")
         if published:
@@ -160,6 +195,7 @@ def sort_entries(entries: list[dict]) -> list[dict]:
 
 
 def main() -> None:
+    """主流程：抓取 RSS 源并发布新条目。"""
     feed_urls = parse_feed_urls()
     if not feed_urls:
         raise RuntimeError("No RSS feed URLs configured. Set RSS_FEED_URLS environment variable.")
