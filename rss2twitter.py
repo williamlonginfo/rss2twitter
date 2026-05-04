@@ -76,7 +76,7 @@ def build_twitter_api() -> tweepy.API:
     access_secret = get_env("TWITTER_ACCESS_TOKEN_SECRET")
 
     auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
-    return tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=False)
+    return tweepy.API(auth, wait_on_rate_limit=True)
 
 
 def entry_unique_id(entry: dict) -> str:
