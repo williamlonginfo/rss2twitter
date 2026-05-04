@@ -68,15 +68,21 @@ def parse_feed_urls() -> list[str]:
     return urls
 
 
-def build_twitter_api() -> tweepy.API:
-    """使用环境变量凭据创建并返回 Tweepy API 客户端。"""
+def build_twitter_api() -> tweepy.Client:
+    """使用环境变量凭据创建并返回 Tweepy Client。"""
     api_key = get_env("TWITTER_API_KEY")
     api_secret = get_env("TWITTER_API_SECRET_KEY")
     access_token = get_env("TWITTER_ACCESS_TOKEN")
     access_secret = get_env("TWITTER_ACCESS_TOKEN_SECRET")
+    bearer_token = get_env("TWITTER_BEARER_TOKEN")
 
-    auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
-    return tweepy.API(auth, wait_on_rate_limit=True)
+    return tweepy.Client(
+        consumer_key=api_key,
+        consumer_secret=api_secret,
+        access_token=access_token,
+        access_token_secret=access_secret,
+        bearer_token=bearer_token
+    )
 
 
 def entry_unique_id(entry: dict) -> str:
@@ -166,7 +172,7 @@ def publish_entry(api: tweepy.API, entry: dict) -> bool:
             continue
         try:
             result = api.media_upload(str(image_path))
-            media_ids.append(result.media_id_string)
+            media_ids.append(result.id)
         except Exception:
             continue
         finally:
@@ -179,7 +185,10 @@ def publish_entry(api: tweepy.API, entry: dict) -> bool:
     if not tweet_text:
         return False
 
-    api.update_status(status=tweet_text, media_ids=media_ids or None)
+    if media_ids:
+        api.create_tweet(text=tweet_text, media_ids=media_ids)
+    else:
+        api.create_tweet(text=tweet_text)
     return True
 
 
