@@ -21,11 +21,12 @@ USER_AGENT = "rss2twitter-bot/1.0"
 class TwitterClients:
     """Twitter clients used by the publisher.
 
-    The publisher uses Twitter/X API v1.1 user-context OAuth for both media
-    upload and tweet creation.
+    Media upload uses Twitter/X API v1.1, while tweet creation uses API v2.
+    Both clients share the same user-context OAuth 1.0a tokens.
     """
 
-    api: tweepy.API
+    tweets: tweepy.Client
+    media: tweepy.API
 
 
 def load_published_ids() -> set:
@@ -87,15 +88,22 @@ def build_twitter_clients() -> TwitterClients:
     access_token = get_env("TWITTER_ACCESS_TOKEN")
     access_secret = get_env("TWITTER_ACCESS_TOKEN_SECRET")
 
-    auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
-    api = tweepy.API(auth, wait_on_rate_limit=True)
-    return TwitterClients(api=api)
+    tweets = tweepy.Client(
+        consumer_key=api_key,
+        consumer_secret=api_secret,
+        access_token=access_token,
+        access_token_secret=access_secret,
+        wait_on_rate_limit=True,
+    )
+    media_auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
+    media = tweepy.API(media_auth, wait_on_rate_limit=True)
+    return TwitterClients(tweets=tweets, media=media)
 
 
 def verify_twitter_credentials(clients: TwitterClients) -> None:
     """在处理 RSS 前验证 Twitter/X 用户上下文凭据。"""
     try:
-        clients.api.verify_credentials()
+        clients.media.verify_credentials()
     except tweepy.Forbidden as exc:
         raise RuntimeError(
             "Twitter/X 认证失败: 当前 API Key / Access Token 所属的 Developer App "
@@ -190,7 +198,7 @@ def publish_entry(clients: TwitterClients, entry: dict) -> bool:
         if not image_path:
             continue
         try:
-            result = clients.api.media_upload(str(image_path))
+            result = clients.media.media_upload(str(image_path))
             media_ids.append(result.id)
         except Exception:
             continue
@@ -205,9 +213,9 @@ def publish_entry(clients: TwitterClients, entry: dict) -> bool:
         return False
 
     if media_ids:
-        clients.api.update_status(status=tweet_text, media_ids=media_ids)
+        clients.tweets.create_tweet(text=tweet_text, media_ids=media_ids, user_auth=True)
     else:
-        clients.api.update_status(status=tweet_text)
+        clients.tweets.create_tweet(text=tweet_text, user_auth=True)
     return True
 
 
