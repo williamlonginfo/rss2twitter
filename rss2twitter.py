@@ -19,10 +19,10 @@ USER_AGENT = "rss2twitter-bot/1.0"
 
 @dataclass(frozen=True)
 class TwitterClients:
-    """Twitter clients used by the publisher.
+    """发布流程使用的 Twitter/X 客户端集合。
 
-    Media upload uses Twitter/X API v1.1, while tweet creation uses API v2.
-    Both clients share the same user-context OAuth 1.0a tokens.
+    图片上传使用 Twitter/X API v1.1，推文发布使用 API v2。
+    两个客户端共用同一组用户上下文 OAuth 1.0a 凭据。
     """
 
     tweets: tweepy.Client
@@ -103,7 +103,7 @@ def build_twitter_clients() -> TwitterClients:
 def verify_twitter_credentials(clients: TwitterClients) -> bool:
     """在处理 RSS 前验证 Twitter/X 用户上下文凭据。
 
-    免费 Project 或旧 App 配置可能暂时无法通过 API v2 校验。此时返回 False，
+    免费项目或旧应用配置可能暂时无法通过 API v2 校验。此时返回 False，
     让定时任务优雅跳过发布，避免 GitHub Actions 因外部服务配置问题失败。
     """
     try:
@@ -112,7 +112,7 @@ def verify_twitter_credentials(clients: TwitterClients) -> bool:
     except tweepy.Forbidden as exc:
         print(
             "跳过发布: Twitter/X 认证未通过。当前 API Key / Access Token 所属的 Developer App "
-            "没有通过 API v2 Project 校验。请确认该 App 已附加到一个 Project，权限为 "
+            "没有通过 API v2 项目校验。请确认该应用已附加到一个项目，权限为 "
             "Read and write，然后重新生成 Access Token 和 Access Token Secret，并更新 "
             "GitHub Secrets。"
         )
@@ -234,7 +234,7 @@ def format_publish_error(exc: Exception) -> str:
     if isinstance(exc, tweepy.Forbidden):
         message += (
             "\n提示: 这是 Twitter/X API 返回的 403。请确认这四个 Secrets 来自同一个"
-            "已绑定 Project 的 Developer App，并且 App 权限是 Read and write："
+            "已绑定项目的 Developer App，并且应用权限是 Read and write："
             "TWITTER_API_KEY、TWITTER_API_SECRET_KEY、TWITTER_ACCESS_TOKEN、"
             "TWITTER_ACCESS_TOKEN_SECRET。修改 App 权限后需要重新生成 Access Token 和"
             "Access Token Secret。发布推文必须使用用户上下文 Access Token。"
