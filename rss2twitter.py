@@ -100,18 +100,25 @@ def build_twitter_clients() -> TwitterClients:
     return TwitterClients(tweets=tweets, media=media)
 
 
-def verify_twitter_credentials(clients: TwitterClients) -> None:
-    """在处理 RSS 前验证 Twitter/X 用户上下文凭据。"""
+def verify_twitter_credentials(clients: TwitterClients) -> bool:
+    """在处理 RSS 前验证 Twitter/X 用户上下文凭据。
+
+    免费 Project 或旧 App 配置可能暂时无法通过 API v2 校验。此时返回 False，
+    让定时任务优雅跳过发布，避免 GitHub Actions 因外部服务配置问题失败。
+    """
     try:
         clients.media.verify_credentials()
         clients.tweets.get_me(user_auth=True)
     except tweepy.Forbidden as exc:
-        raise RuntimeError(
-            "Twitter/X 认证失败: 当前 API Key / Access Token 所属的 Developer App "
+        print(
+            "跳过发布: Twitter/X 认证未通过。当前 API Key / Access Token 所属的 Developer App "
             "没有通过 API v2 Project 校验。请确认该 App 已附加到一个 Project，权限为 "
             "Read and write，然后重新生成 Access Token 和 Access Token Secret，并更新 "
             "GitHub Secrets。"
-        ) from exc
+        )
+        print(f"Twitter/X 返回: {exc}")
+        return False
+    return True
 
 
 def entry_unique_id(entry: dict) -> str:
@@ -253,11 +260,17 @@ def main() -> None:
         raise RuntimeError("No RSS feed URLs configured. Set RSS_FEED_URLS environment variable.")
 
     clients = build_twitter_clients()
-    verify_twitter_credentials(clients)
+    if not verify_twitter_credentials(clients):
+        return
+
     published_ids = load_published_ids()
     found_new = False
+    stop_publishing = False
 
     for feed_url in feed_urls:
+        if stop_publishing:
+            break
+
         feed = feedparser.parse(feed_url)
         if feed.bozo:
             print(f"警告: RSS 源解析失败: {feed_url}")
@@ -273,6 +286,11 @@ def main() -> None:
                 if publish_entry(clients, entry):
                     published_ids.add(uid)
                     found_new = True
+            except tweepy.Forbidden as exc:
+                print(f"发布失败: {uid} -> {format_publish_error(exc)}")
+                print("本轮发布已停止，未成功发布的条目不会写入 published_ids.json。")
+                stop_publishing = True
+                break
             except Exception as exc:
                 print(f"发布失败: {uid} -> {format_publish_error(exc)}")
 
