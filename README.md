@@ -27,7 +27,7 @@
 - `TWITTER_ACCESS_TOKEN`
 - `TWITTER_ACCESS_TOKEN_SECRET`
 
-这些 Twitter/X 凭据必须来自同一个已绑定 Project 的 Developer App。App 权限需要设置为 `Read and write`，修改权限后请重新生成 `Access Token` 和 `Access Token Secret`。发布推文使用用户上下文 OAuth 1.0a，`Bearer Token` 不能替代上面的 Access Token。
+这些 Twitter/X 凭据必须来自同一个 Developer App。App 权限需要设置为 `Read and write`，修改权限后请重新生成 `Access Token` 和 `Access Token Secret`。发布推文使用 OAuth 1.0a 用户上下文，`Bearer Token` 和 OAuth 2.0 token 不能替代上面的 Access Token。
 
 > 例如，`RSS_FEED_URLS` 可以是：
 > `https://example.com/feed.xml\nhttps://another.com/rss`
