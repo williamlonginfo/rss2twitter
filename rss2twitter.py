@@ -100,6 +100,19 @@ def build_twitter_clients() -> TwitterClients:
     return TwitterClients(tweets=tweets, media=media)
 
 
+def verify_twitter_credentials(clients: TwitterClients) -> None:
+    """在处理 RSS 前验证 Twitter/X 用户上下文凭据。"""
+    try:
+        clients.tweets.get_me(user_auth=True)
+    except tweepy.Forbidden as exc:
+        raise RuntimeError(
+            "Twitter/X 认证失败: 当前 API Key / Access Token 所属的 Developer App "
+            "没有通过 API v2 Project 校验。请到 developer.x.com 的 Developer Portal "
+            "确认该 App 已附加到一个 Project，权限为 Read and write，然后重新生成 "
+            "Access Token 和 Access Token Secret，并更新 GitHub Secrets。"
+        ) from exc
+
+
 def entry_unique_id(entry: dict) -> str:
     """为 RSS 条目生成稳定的唯一标识符。"""
     raw_id = entry.get("id") or entry.get("guid") or entry.get("link") or entry.get("title")
@@ -216,7 +229,7 @@ def format_publish_error(exc: Exception) -> str:
             "已绑定 Project 的 Developer App，并且 App 权限是 Read and write："
             "TWITTER_API_KEY、TWITTER_API_SECRET_KEY、TWITTER_ACCESS_TOKEN、"
             "TWITTER_ACCESS_TOKEN_SECRET。修改 App 权限后需要重新生成 Access Token 和"
-            "Access Token Secret。Bearer Token 不能替代用户 Access Token 来发布推文。"
+            "Access Token Secret。发布推文必须使用用户上下文 Access Token。"
         )
     return message
 
@@ -239,6 +252,7 @@ def main() -> None:
         raise RuntimeError("No RSS feed URLs configured. Set RSS_FEED_URLS environment variable.")
 
     clients = build_twitter_clients()
+    verify_twitter_credentials(clients)
     published_ids = load_published_ids()
     found_new = False
 
