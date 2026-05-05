@@ -104,11 +104,13 @@ def verify_twitter_credentials(clients: TwitterClients) -> None:
     """在处理 RSS 前验证 Twitter/X 用户上下文凭据。"""
     try:
         clients.media.verify_credentials()
+        clients.tweets.get_me(user_auth=True)
     except tweepy.Forbidden as exc:
         raise RuntimeError(
             "Twitter/X 认证失败: 当前 API Key / Access Token 所属的 Developer App "
-            "无权发布。请确认 App 权限为 Read and write，然后重新生成 Access Token "
-            "和 Access Token Secret，并更新 GitHub Secrets。"
+            "没有通过 API v2 Project 校验。请确认该 App 已附加到一个 Project，权限为 "
+            "Read and write，然后重新生成 Access Token 和 Access Token Secret，并更新 "
+            "GitHub Secrets。"
         ) from exc
 
 
