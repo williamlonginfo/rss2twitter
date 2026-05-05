@@ -4,6 +4,7 @@ import json
 import os
 import re
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import feedparser
@@ -14,6 +15,18 @@ STATE_FILE = Path(__file__).with_name("published_ids.json")
 MAX_MEDIA = 4
 TIMEOUT = 15
 USER_AGENT = "rss2twitter-bot/1.0"
+
+
+@dataclass(frozen=True)
+class TwitterClients:
+    """Twitter clients used by the publisher.
+
+    Twitter/X still requires v1.1 OAuth for media upload, while tweet creation
+    uses the v2 API. Both clients share the same user-context OAuth 1.0a tokens.
+    """
+
+    tweets: tweepy.Client
+    media: tweepy.API
 
 
 def load_published_ids() -> set:
@@ -68,21 +81,23 @@ def parse_feed_urls() -> list[str]:
     return urls
 
 
-def build_twitter_api() -> tweepy.Client:
-    """使用环境变量凭据创建并返回 Tweepy Client。"""
+def build_twitter_clients() -> TwitterClients:
+    """使用环境变量凭据创建 Twitter/X 发布客户端。"""
     api_key = get_env("TWITTER_API_KEY")
     api_secret = get_env("TWITTER_API_SECRET_KEY")
     access_token = get_env("TWITTER_ACCESS_TOKEN")
     access_secret = get_env("TWITTER_ACCESS_TOKEN_SECRET")
-    bearer_token = get_env("TWITTER_BEARER_TOKEN")
 
-    return tweepy.Client(
+    tweets = tweepy.Client(
         consumer_key=api_key,
         consumer_secret=api_secret,
         access_token=access_token,
         access_token_secret=access_secret,
-        bearer_token=bearer_token
+        wait_on_rate_limit=True,
     )
+    media_auth = tweepy.OAuth1UserHandler(api_key, api_secret, access_token, access_secret)
+    media = tweepy.API(media_auth, wait_on_rate_limit=True)
+    return TwitterClients(tweets=tweets, media=media)
 
 
 def entry_unique_id(entry: dict) -> str:
@@ -159,7 +174,7 @@ def build_tweet_text(entry: dict) -> str:
     return tweet
 
 
-def publish_entry(api: tweepy.API, entry: dict) -> bool:
+def publish_entry(clients: TwitterClients, entry: dict) -> bool:
     """将单个 RSS 条目发布到 Twitter。
 
     下载最多 MAX_MEDIA 张图片，上传到 Twitter，并发布推文文本。发布成功返回 True。
@@ -171,7 +186,7 @@ def publish_entry(api: tweepy.API, entry: dict) -> bool:
         if not image_path:
             continue
         try:
-            result = api.media_upload(str(image_path))
+            result = clients.media.media_upload(str(image_path))
             media_ids.append(result.id)
         except Exception:
             continue
@@ -186,10 +201,24 @@ def publish_entry(api: tweepy.API, entry: dict) -> bool:
         return False
 
     if media_ids:
-        api.create_tweet(text=tweet_text, media_ids=media_ids)
+        clients.tweets.create_tweet(text=tweet_text, media_ids=media_ids, user_auth=True)
     else:
-        api.create_tweet(text=tweet_text)
+        clients.tweets.create_tweet(text=tweet_text, user_auth=True)
     return True
+
+
+def format_publish_error(exc: Exception) -> str:
+    """将 Twitter/X 发布错误转换为更容易处理的提示。"""
+    message = str(exc)
+    if isinstance(exc, tweepy.Forbidden):
+        message += (
+            "\n提示: 这是 Twitter/X API 返回的 403。请确认这四个 Secrets 来自同一个"
+            "已绑定 Project 的 Developer App，并且 App 权限是 Read and write："
+            "TWITTER_API_KEY、TWITTER_API_SECRET_KEY、TWITTER_ACCESS_TOKEN、"
+            "TWITTER_ACCESS_TOKEN_SECRET。修改 App 权限后需要重新生成 Access Token 和"
+            "Access Token Secret。Bearer Token 不能替代用户 Access Token 来发布推文。"
+        )
+    return message
 
 
 def sort_entries(entries: list[dict]) -> list[dict]:
@@ -209,7 +238,7 @@ def main() -> None:
     if not feed_urls:
         raise RuntimeError("No RSS feed URLs configured. Set RSS_FEED_URLS environment variable.")
 
-    api = build_twitter_api()
+    clients = build_twitter_clients()
     published_ids = load_published_ids()
     found_new = False
 
@@ -226,11 +255,11 @@ def main() -> None:
 
             try:
                 print(f"发布: {entry.get('title', entry.get('link', uid))}")
-                if publish_entry(api, entry):
+                if publish_entry(clients, entry):
                     published_ids.add(uid)
                     found_new = True
             except Exception as exc:
-                print(f"发布失败: {uid} -> {exc}")
+                print(f"发布失败: {uid} -> {format_publish_error(exc)}")
 
     if found_new:
         save_published_ids(published_ids)
